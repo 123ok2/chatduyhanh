@@ -69,7 +69,6 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [viewportHeight, setViewportHeight] = useState<number | string>('100dvh');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [fingerprintId, setFingerprintId] = useState<string | null>(null);
@@ -141,27 +140,6 @@ export default function App() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.visualViewport) {
-        setViewportHeight(window.visualViewport.height);
-      } else {
-        setViewportHeight(window.innerHeight);
-      }
-      setTimeout(scrollToBottom, 50);
-    };
-
-    window.visualViewport?.addEventListener('resize', handleResize);
-    window.addEventListener('resize', handleResize);
-    
-    handleResize();
-
-    return () => {
-      window.visualViewport?.removeEventListener('resize', handleResize);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
 
   useEffect(() => {
     if (!isInitialized) return;
@@ -320,10 +298,7 @@ export default function App() {
   const displayAvatar = "/avatar.jpg";
 
   return (
-    <div 
-      className="flex flex-col w-full overflow-hidden font-sans bg-white fixed inset-0"
-      style={{ height: viewportHeight }}
-    >
+    <div className="flex flex-col w-full h-full overflow-hidden font-sans bg-white">
       {/* Header */}
       <div className="chat-header p-3 shrink-0 flex items-center justify-between shadow-sm z-10">
         <div className="flex items-center gap-3">

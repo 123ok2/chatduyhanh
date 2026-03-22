@@ -11,8 +11,10 @@ html, body, #root {
   padding: 0;
   background-color: white;
   overflow: hidden;
-  position: fixed;
-  width: 100%;
+}
+
+body {
+  overscroll-behavior-y: none;
 }
 
 .chat-header {
