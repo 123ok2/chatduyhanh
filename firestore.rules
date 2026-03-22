@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: chats
+    // Document ID: {fingerprintId}
+    // Fields:
+    //   - fingerprintId: string (required, must match document ID)
+    //   - messages: list of objects (required)
+    //   - updatedAt: string (required)
+    //
+    // ===============================================================
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidMessage(msg) {
+      return msg is map &&
+             msg.keys().hasAll(['id', 'sender', 'content', 'timestamp']) &&
+             msg.id is string &&
+             msg.sender in ['user', 'duyhanh'] &&
+             msg.content is string &&
+             msg.timestamp is string &&
+             (!('isImage' in msg) || msg.isImage is bool);
+    }
+
+    function areValidMessages(messages) {
+      return messages is list && messages.size() <= 1000; // Limit to 1000 messages to prevent 1MB limit issues
+    }
+
+    function isValidChatSession(fingerprintId) {
+      return hasRequiredFields(['fingerprintId', 'messages', 'updatedAt']) &&
+             request.resource.data.fingerprintId == fingerprintId &&
+             request.resource.data.updatedAt is string &&
+             areValidMessages(request.resource.data.messages);
+    }
+
+    match /chats/{fingerprintId} {
+      // Allow read if the user requests their specific fingerprint ID
+      allow read: if true; // Anyone who knows the fingerprint ID can read it
+      
+      // Allow create if the document ID matches the fingerprint ID in the data
+      allow create: if isValidChatSession(fingerprintId);
+      
+      // Allow update if the fingerprint ID doesn't change
+      allow update: if isValidChatSession(fingerprintId) && 
+                       request.resource.data.fingerprintId == resource.data.fingerprintId;
+                       
+      // Allow delete
+      allow delete: if true;
+    }
+  }
+}
