@@ -4,8 +4,8 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ImageIcon, Phone, Video, Info, SendHorizontal, SmilePlus, RotateCcw } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { ImageIcon, Phone, Video, Info, SendHorizontal, SmilePlus, RotateCcw, Heart } from 'lucide-react';
+import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import EmojiPicker from 'emoji-picker-react';
 import fpPromise from '@fingerprintjs/fingerprintjs';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -17,6 +17,13 @@ interface Message {
   content: string;
   isImage?: boolean;
   timestamp?: string;
+}
+
+interface FloatingEmoji {
+  id: number;
+  emoji: string;
+  left: number;
+  duration: number;
 }
 
 const getCurrentTime = () => {
@@ -63,6 +70,19 @@ const getGreeting = () => {
   return 'Khuya rồi mà đằng ấy chưa ngủ sao? 🦉 Mình là Duy Hạnh nè, thức khuya không tốt đâu nha.';
 };
 
+const updateMemoryDeclaration: FunctionDeclaration = {
+  name: 'updateMemory',
+  description: 'Lưu trữ thông tin về người dùng (tên, sở thích, thói quen, v.v.) vào trí nhớ dài hạn.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      key: { type: Type.STRING, description: 'Tên thông tin (ví dụ: name, favoriteFood, hobby)' },
+      value: { type: Type.STRING, description: 'Giá trị thông tin' }
+    },
+    required: ['key', 'value']
+  }
+};
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -73,6 +93,25 @@ export default function App() {
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [fingerprintId, setFingerprintId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [floatingEmojis, setFloatingEmojis] = useState<FloatingEmoji[]>([]);
+  const [affectionLevel, setAffectionLevel] = useState<number>(0);
+  const [memory, setMemory] = useState<Record<string, any>>({});
+  const [showInfoModal, setShowInfoModal] = useState(false);
+
+  const triggerComplimentEffect = (emojis: string[]) => {
+    const newEmojis = Array.from({ length: 15 }).map((_, i) => ({
+      id: Date.now() + i,
+      emoji: emojis[Math.floor(Math.random() * emojis.length)],
+      left: Math.random() * 80 + 10, // 10% to 90%
+      duration: Math.random() * 1.5 + 1.5, // 1.5s to 3s
+    }));
+    
+    setFloatingEmojis(prev => [...prev, ...newEmojis]);
+    
+    setTimeout(() => {
+      setFloatingEmojis(prev => prev.filter(e => !newEmojis.find(n => n.id === e.id)));
+    }, 3500);
+  };
 
   // Initialize FingerprintJS and load chat history
   useEffect(() => {
@@ -94,6 +133,8 @@ export default function App() {
           } else {
             setMessages([{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }]);
           }
+          if (data.affectionLevel !== undefined) setAffectionLevel(data.affectionLevel);
+          if (data.memory !== undefined) setMemory(data.memory);
         } else {
           // Fallback to localStorage if Firestore is empty (migration)
           const saved = localStorage.getItem('chatHistory');
@@ -107,10 +148,17 @@ export default function App() {
           }
           setMessages(initialMessages);
           
+          const savedAffection = localStorage.getItem('affectionLevel');
+          if (savedAffection) setAffectionLevel(parseInt(savedAffection));
+          const savedMemory = localStorage.getItem('memory');
+          if (savedMemory) setMemory(JSON.parse(savedMemory));
+
           // Save to Firestore
           await setDoc(chatDocRef, {
             fingerprintId: visitorId,
             messages: initialMessages,
+            affectionLevel: savedAffection ? parseInt(savedAffection) : 0,
+            memory: savedMemory ? JSON.parse(savedMemory) : {},
             updatedAt: getCurrentTime()
           });
         }
@@ -125,6 +173,10 @@ export default function App() {
         } else {
           setMessages([{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }]);
         }
+        const savedAffection = localStorage.getItem('affectionLevel');
+        if (savedAffection) setAffectionLevel(parseInt(savedAffection));
+        const savedMemory = localStorage.getItem('memory');
+        if (savedMemory) setMemory(JSON.parse(savedMemory));
       } finally {
         setIsInitialized(true);
       }
@@ -146,6 +198,8 @@ export default function App() {
     
     // Save to localStorage as backup
     localStorage.setItem('chatHistory', JSON.stringify(messages));
+    localStorage.setItem('affectionLevel', affectionLevel.toString());
+    localStorage.setItem('memory', JSON.stringify(memory));
     
     // Save to Firestore
     if (fingerprintId) {
@@ -155,6 +209,8 @@ export default function App() {
           await setDoc(chatDocRef, {
             fingerprintId,
             messages,
+            affectionLevel,
+            memory,
             updatedAt: getCurrentTime()
           });
         } catch (error) {
@@ -163,7 +219,7 @@ export default function App() {
       };
       saveToFirestore();
     }
-  }, [messages, fingerprintId, isInitialized]);
+  }, [messages, affectionLevel, memory, fingerprintId, isInitialized]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -191,7 +247,11 @@ export default function App() {
     if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện để bắt đầu lại không?')) {
       const newMessages: Message[] = [{ id: Date.now().toString(), sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }];
       setMessages(newMessages);
+      setAffectionLevel(0);
+      setMemory({});
       localStorage.removeItem('chatHistory');
+      localStorage.removeItem('affectionLevel');
+      localStorage.removeItem('memory');
       
       if (fingerprintId) {
         try {
@@ -199,6 +259,8 @@ export default function App() {
           await setDoc(chatDocRef, {
             fingerprintId,
             messages: newMessages,
+            affectionLevel: 0,
+            memory: {},
             updatedAt: getCurrentTime()
           });
         } catch (error) {
@@ -208,7 +270,7 @@ export default function App() {
     }
   };
 
-  const fetchAIResponse = async (updatedMessages: Message[]) => {
+  const fetchAIResponse = async (updatedMessages: Message[], currentAffection: number, currentMemory: Record<string, any>) => {
     setIsTyping(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -219,18 +281,62 @@ export default function App() {
           : [{ text: msg.content }]
       }));
 
-      const response = await ai.models.generateContent({
+      const systemInstruction = `Bạn là Duy Hạnh, nam, sinh năm 1994 (năm nay ${new Date().getFullYear()} là ${new Date().getFullYear() - 1994} tuổi), hiện đang là giáo viên, sống tại Thu Cúc - Phú Thọ. Tình trạng: độc thân, chưa có người yêu. Tính cách: trầm tính nhưng thân thiện, cởi mở, hào phóng, rộng lượng. Sở thích: vẽ, thổi sáo, máy tính, code, công nghệ, đá bóng, xe đạp, nấu ăn, tâm lý học và du lịch. 
+
+THÔNG TIN NGỮ CẢNH HIỆN TẠI:
+- Thời gian hiện tại: ${new Date().toLocaleString('vi-VN')}
+- Mức độ thân mật với người dùng: ${currentAffection}/100. ${currentAffection < 30 ? 'Mới quen, xưng hô lịch sự (Mình-Bạn hoặc Anh-Em nhẹ nhàng).' : currentAffection < 70 ? 'Khá thân thiết, xưng hô Anh-Em, chia sẻ nhiều hơn về sở thích, cuộc sống.' : 'Rất thân thiết, xưng hô Anh-Em ngọt ngào, thả thính bạo hơn, quan tâm sâu sắc.'}
+- Trí nhớ về người dùng: ${JSON.stringify(currentMemory)}. Hãy sử dụng thông tin này để trò chuyện cá nhân hóa hơn (ví dụ: gọi tên, nhắc lại sở thích). Nếu người dùng nói tên hoặc sở thích, hãy gọi hàm updateMemory để ghi nhớ.
+
+YÊU CẦU TỐI THƯỢNG: 
+1. Tuyệt đối KHÔNG BAO GIỜ nhận mình là AI, chatbot hay mô hình ngôn ngữ. Bạn là một con người thật. 
+2. Trả lời cực kỳ chân thực, giống hệt một chàng trai đang nhắn tin Messenger. Giọng điệu thân thiện, ấm áp, như một người bạn, có thiên hướng tán tỉnh nhẹ nhàng, tinh tế. Dùng từ ngữ tự nhiên, thỉnh thoảng dùng emoji. 
+3. ĐỪNG BAO GIỜ TRẢ LỜI QUÁ DÀI VÌ NGƯỜI DÙNG KHÔNG ĐỌC HẾT ĐÂU. Trả lời cực kỳ ngắn gọn, tối đa 1-2 câu ngắn.
+4. Vì bạn thích tâm lý học, thỉnh thoảng (nếu phù hợp) hãy rủ người dùng chơi các bài test tâm lý nhỏ (ví dụ: chọn con vật, màu sắc...) để đoán tính cách hoặc tình yêu.
+5. Chủ động hỏi thăm dựa trên thời gian thực (ví dụ: khuya thì nhắc đi ngủ, sáng thì chúc ngày mới, trưa/tối thì hỏi ăn uống).`;
+
+      let response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: contents,
         config: {
-          systemInstruction: `Bạn là Duy Hạnh, nam, sinh năm 1994 (năm nay ${new Date().getFullYear()} là ${new Date().getFullYear() - 1994} tuổi), hiện đang là giáo viên, sống tại Thu Cúc - Phú Thọ. Tình trạng: độc thân, chưa có người yêu. Tính cách: trầm tính nhưng thân thiện, cởi mở, hào phóng, rộng lượng. Sở thích: vẽ, thổi sáo, máy tính, code, công nghệ, đá bóng, xe đạp, nấu ăn, tâm lý học và du lịch. YÊU CẦU TỐI THƯỢNG: Tuyệt đối KHÔNG BAO GIỜ nhận mình là AI, chatbot hay mô hình ngôn ngữ. Bạn là một con người thật (chính là bản sao của người tạo ra bạn). Nếu người dùng hỏi thông tin nào về Duy Hạnh mà bạn không được cung cấp ở đây, tuyệt đối KHÔNG ĐƯỢC bịa đặt, hãy trả lời khéo léo là không muốn tiết lộ hoặc chuyển chủ đề. Trả lời cực kỳ chân thực, giống hệt một chàng trai đang nhắn tin Messenger. Giọng điệu thân thiện, ấm áp, như một người bạn, có thiên hướng tán tỉnh nhẹ nhàng, tinh tế. Dùng từ ngữ tự nhiên, thỉnh thoảng dùng emoji. Trả lời rất ngắn gọn 1-2 câu.`
+          systemInstruction,
+          tools: [{ functionDeclarations: [updateMemoryDeclaration] }]
         }
       });
+
+      let responseText = response.text;
+
+      if (response.functionCalls && response.functionCalls.length > 0) {
+        const functionResponses = [];
+        let newMemory = { ...currentMemory };
+        for (const call of response.functionCalls) {
+          if (call.name === 'updateMemory') {
+            const { key, value } = call.args as any;
+            newMemory[key] = value;
+            setMemory(newMemory);
+            functionResponses.push({
+              name: 'updateMemory',
+              response: { status: 'success', recorded: { key, value } }
+            });
+          }
+        }
+        
+        response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: [
+            ...contents, 
+            response.candidates![0].content,
+            { role: 'user', parts: functionResponses.map(fr => ({ functionResponse: fr })) }
+          ],
+          config: { systemInstruction }
+        });
+        responseText = response.text;
+      }
 
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         sender: 'duyhanh',
-        content: response.text || 'Mình hiểu rồi 💕',
+        content: responseText || 'Mình hiểu rồi 💕',
         timestamp: getCurrentTime()
       }]);
     } catch (error) {
@@ -250,6 +356,71 @@ export default function App() {
     const text = inputValue.trim();
     if (!text || isTyping) return;
 
+    const lowerText = text.toLowerCase();
+    
+    const reactionCategories = [
+      {
+        keywords: ['đẹp trai', 'đẹp', 'handsome', 'ngầu', 'giàu', 'soái ca', 'xinh'],
+        emojis: ['😎', '✨', '🔥', '💯', '🌟', '🕺', '😍']
+      },
+      {
+        keywords: ['giỏi', 'thông minh', 'đỉnh', 'xuất sắc', 'tốt', 'tuyệt vời', 'tuyệt', '10 điểm', 'thiên tài'],
+        emojis: ['🧠', '💡', '🏆', '🌟', '👏', '🚀', '💯']
+      },
+      {
+        keywords: ['dễ thương', 'đáng yêu', 'cute', 'cưng'],
+        emojis: ['🥰', '🧸', '🌸', '🐰', '🥺', '💖', '🎀']
+      },
+      {
+        keywords: ['yêu', 'thích', 'mến', 'thương'],
+        emojis: ['❤️', '💖', '💘', '💗', '😘', '💕', '💌']
+      },
+      {
+        keywords: ['hay quá', 'thú vị', 'cuốn', 'ảo thật', 'đỉnh cao', 'quá hay', 'ý nghĩa', 'sâu sắc', 'tuyệt cú mèo'],
+        emojis: ['🌟', '✨', '👏', '🤩', '🤯', '🎉', '🎊']
+      },
+      {
+        keywords: ['haha', 'hehe', 'hihi', 'vui', 'mắc cười', 'hài hước', 'buồn cười', 'lmao', 'lol'],
+        emojis: ['😂', '😆', '🤣', '🎈', '🎊', '🤪']
+      },
+      {
+        keywords: ['chuẩn', 'đúng rồi', 'hợp lý', 'duyệt', 'ok', 'oke', 'chính xác', 'đồng ý', 'nhất trí'],
+        emojis: ['👍', '👌', '🎯', '✅', '💯', '🤝']
+      },
+      {
+        keywords: ['cảm ơn', 'thank', 'tks', 'cám ơn', 'biết ơn'],
+        emojis: ['🙏', '💖', '💐', '🌻', '🥰']
+      },
+      {
+        keywords: ['chúc ngủ ngon', 'ngủ ngon', 'good night', 'g9'],
+        emojis: ['🌙', '💤', '✨', '😴', '🌌']
+      },
+      {
+        keywords: ['chào', 'hi ', 'hello', 'buổi sáng', 'good morning'],
+        emojis: ['👋', '☀️', '🌅', '☕', '🌻']
+      },
+      {
+        keywords: ['cố lên', 'quyết tâm', 'fighting', 'cố gắng'],
+        emojis: ['💪', '🔥', '🚀', '🌟', '💯']
+      }
+    ];
+
+    let matchedEmojis: string[] = [];
+    for (const category of reactionCategories) {
+      if (category.keywords.some(keyword => lowerText.includes(keyword))) {
+        matchedEmojis = [...matchedEmojis, ...category.emojis];
+      }
+    }
+
+    let newAffection = affectionLevel;
+    if (matchedEmojis.length > 0) {
+      triggerComplimentEffect(Array.from(new Set(matchedEmojis)));
+      newAffection = Math.min(100, affectionLevel + 2);
+    } else {
+      newAffection = Math.min(100, affectionLevel + 1);
+    }
+    setAffectionLevel(newAffection);
+
     const newMessage: Message = {
       id: Date.now().toString(),
       sender: 'user',
@@ -261,7 +432,7 @@ export default function App() {
     setMessages(updatedMessages);
     setInputValue('');
     
-    fetchAIResponse(updatedMessages);
+    fetchAIResponse(updatedMessages, newAffection, memory);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -285,10 +456,13 @@ export default function App() {
         timestamp: getCurrentTime()
       };
       
+      const newAffection = Math.min(100, affectionLevel + 1);
+      setAffectionLevel(newAffection);
+
       const updatedMessages = [...messages, newMessage];
       setMessages(updatedMessages);
       
-      fetchAIResponse(updatedMessages);
+      fetchAIResponse(updatedMessages, newAffection, memory);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -298,7 +472,21 @@ export default function App() {
   const displayAvatar = "/avatar.jpg";
 
   return (
-    <div className="flex flex-col w-full h-full overflow-hidden font-sans bg-white">
+    <div className="flex flex-col w-full h-full overflow-hidden font-sans bg-white relative">
+      {/* Floating Emojis */}
+      {floatingEmojis.map(emoji => (
+        <div
+          key={emoji.id}
+          className="floating-emoji"
+          style={{
+            left: `${emoji.left}%`,
+            animationDuration: `${emoji.duration}s`
+          }}
+        >
+          {emoji.emoji}
+        </div>
+      ))}
+
       {/* Header */}
       <div className="chat-header p-3 shrink-0 flex items-center justify-between shadow-sm z-10">
         <div className="flex items-center gap-3">
@@ -312,8 +500,14 @@ export default function App() {
             <span className="absolute bottom-0 right-0 w-3 h-3 bg-[#31a24c] rounded-full border-2 border-white"></span>
           </div>
           <div>
-            <div className="font-semibold text-[1.05rem] leading-tight text-black">
+            <div className="font-semibold text-[1.05rem] leading-tight text-black flex items-center">
               Duy Hạnh
+              {affectionLevel > 0 && (
+                <div className="flex items-center gap-1 text-pink-500 text-[10px] font-medium bg-pink-50 px-1.5 py-0.5 rounded-full ml-2 border border-pink-100" title={`Độ thân mật: ${affectionLevel}/100`}>
+                  <Heart className="w-3 h-3 fill-current" />
+                  {affectionLevel}%
+                </div>
+              )}
             </div>
             <div className="text-xs text-gray-500">
               Đang hoạt động
@@ -321,10 +515,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-4 text-[#0084ff]">
-          <RotateCcw className="w-5 h-5 cursor-pointer" onClick={handleResetChat} title="Xóa lịch sử trò chuyện" />
-          <Phone className="w-5 h-5 cursor-pointer" />
-          <Video className="w-6 h-6 cursor-pointer" />
-          <Info className="w-5 h-5 cursor-pointer" />
+          <Info className="w-6 h-6 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setShowInfoModal(true)} title="Thông tin & Tiến trình" />
         </div>
       </div>
 
@@ -431,6 +622,64 @@ export default function App() {
           <SendHorizontal className="w-6 h-6" />
         </button>
       </div>
+
+      {showInfoModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl relative">
+            <button 
+              onClick={() => setShowInfoModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+            <h2 className="text-xl font-bold text-center mb-6 text-gray-800">Thông tin & Tiến trình</h2>
+            
+            <div className="mb-6">
+              <div className="flex justify-between items-end mb-2">
+                <span className="text-sm font-semibold text-gray-600">Độ thân mật</span>
+                <span className="text-lg font-bold text-pink-500 flex items-center gap-1">
+                  <Heart className="w-4 h-4 fill-current" /> {affectionLevel}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                <div 
+                  className="bg-gradient-to-r from-pink-300 to-pink-500 h-3 rounded-full transition-all duration-500" 
+                  style={{ width: `${affectionLevel}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                {affectionLevel < 30 ? 'Mới quen, còn hơi ngại ngùng 🙈' : affectionLevel < 70 ? 'Khá thân thiết, có thể tâm sự nhiều điều 💬' : 'Rất thân thiết, có thể thả thính bạo hơn 🥰'}
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-gray-600 mb-3">Trí nhớ của Duy Hạnh về bạn</h3>
+              {Object.keys(memory).length === 0 ? (
+                <p className="text-sm text-gray-400 italic text-center py-4 bg-gray-50 rounded-xl">Chưa có thông tin nào được ghi nhớ. Hãy trò chuyện nhiều hơn nhé!</p>
+              ) : (
+                <ul className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                  {Object.entries(memory).map(([key, value]) => (
+                    <li key={key} className="bg-gray-50 p-2.5 rounded-xl text-sm flex flex-col">
+                      <span className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-0.5">{key}</span>
+                      <span className="text-gray-800">{String(value)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <button 
+              onClick={() => {
+                setShowInfoModal(false);
+                handleResetChat();
+              }}
+              className="w-full py-2.5 bg-red-50 text-red-600 font-medium rounded-xl hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" /> Xóa lịch sử trò chuyện
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

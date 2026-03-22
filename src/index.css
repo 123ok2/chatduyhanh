@@ -56,3 +56,19 @@ body {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+@keyframes floatHeart {
+  0% { transform: translateY(0) scale(0.5) rotate(0deg); opacity: 0; }
+  20% { transform: translateY(-20px) scale(1.2) rotate(-10deg); opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(-250px) scale(1) rotate(20deg); opacity: 0; }
+}
+
+.floating-emoji {
+  position: absolute;
+  pointer-events: none;
+  animation: floatHeart ease-out forwards;
+  z-index: 100;
+  font-size: 2rem;
+  bottom: 80px;
+}
