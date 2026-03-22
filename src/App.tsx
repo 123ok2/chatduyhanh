@@ -502,12 +502,14 @@ YÊU CẦU TỐI THƯỢNG:
           <div>
             <div className="font-semibold text-[1.05rem] leading-tight text-black flex items-center">
               Duy Hạnh
-              {affectionLevel > 0 && (
-                <div className="flex items-center gap-1 text-pink-500 text-[10px] font-medium bg-pink-50 px-1.5 py-0.5 rounded-full ml-2 border border-pink-100" title={`Độ thân mật: ${affectionLevel}/100`}>
-                  <Heart className="w-3 h-3 fill-current" />
-                  {affectionLevel}%
-                </div>
-              )}
+              <div 
+                className="flex items-center gap-1 text-pink-500 text-[10px] font-medium bg-pink-50 px-1.5 py-0.5 rounded-full ml-2 border border-pink-100 cursor-pointer hover:bg-pink-100 transition-colors" 
+                title={`Độ thân mật: ${affectionLevel}/100`}
+                onClick={() => setShowInfoModal(true)}
+              >
+                <Heart className="w-3 h-3 fill-current" />
+                {affectionLevel}%
+              </div>
             </div>
             <div className="text-xs text-gray-500">
               Đang hoạt động
