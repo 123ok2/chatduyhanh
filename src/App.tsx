@@ -321,7 +321,7 @@ export default function App() {
 
   return (
     <div 
-      className="flex flex-col w-full overflow-hidden font-sans bg-white"
+      className="flex flex-col w-full overflow-hidden font-sans bg-white fixed inset-0"
       style={{ height: viewportHeight }}
     >
       {/* Header */}
