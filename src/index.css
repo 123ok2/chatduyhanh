@@ -5,13 +5,25 @@
   --font-sans: "Nunito", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
-html, body, #root {
+html, body {
   height: 100%;
-  height: calc(var(--vh, 1vh) * 100);
   margin: 0;
   padding: 0;
   background-color: white;
   overflow: hidden;
+  width: 100%;
+}
+
+#root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  height: calc(var(--vh, 1vh) * 100);
+  transform: translateY(var(--offset-y, 0px));
+  display: flex;
+  flex-direction: column;
 }
 
 body {

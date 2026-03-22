@@ -103,7 +103,12 @@ export default function App() {
       const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
       const vh = height * 0.01;
       document.documentElement.style.setProperty('--vh', `${vh}px`);
-      window.scrollTo(0, 0);
+      
+      // Also adjust the top offset if the visual viewport is scrolled
+      if (window.visualViewport) {
+        document.documentElement.style.setProperty('--offset-y', `${window.visualViewport.offsetTop}px`);
+      }
+      
       setTimeout(scrollToBottom, 50);
     };
     
@@ -111,12 +116,14 @@ export default function App() {
     window.addEventListener('resize', setVh);
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', setVh);
+      window.visualViewport.addEventListener('scroll', setVh);
     }
     
     return () => {
       window.removeEventListener('resize', setVh);
       if (window.visualViewport) {
         window.visualViewport.removeEventListener('resize', setVh);
+        window.visualViewport.removeEventListener('scroll', setVh);
       }
     };
   }, []);
