@@ -98,6 +98,29 @@ export default function App() {
   const [memory, setMemory] = useState<Record<string, any>>({});
   const [showInfoModal, setShowInfoModal] = useState(false);
 
+  useEffect(() => {
+    const setVh = () => {
+      const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      const vh = height * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+      window.scrollTo(0, 0);
+      setTimeout(scrollToBottom, 50);
+    };
+    
+    setVh();
+    window.addEventListener('resize', setVh);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', setVh);
+    }
+    
+    return () => {
+      window.removeEventListener('resize', setVh);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', setVh);
+      }
+    };
+  }, []);
+
   const triggerComplimentEffect = (emojis: string[]) => {
     const newEmojis = Array.from({ length: 15 }).map((_, i) => ({
       id: Date.now() + i,
@@ -610,7 +633,7 @@ YÊU CẦU TỐI THƯỢNG:
             type="text" 
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            className="flex-1 bg-transparent outline-none text-[0.95rem] text-black" 
+            className="flex-1 bg-transparent outline-none text-base text-black" 
             placeholder="Aa" 
             onKeyDown={handleKeyDown}
             onFocus={() => setTimeout(scrollToBottom, 100)}
