@@ -70,6 +70,54 @@ const getGreeting = () => {
   return 'Khuya rồi mà đằng ấy chưa ngủ sao? 🦉 Mình là Duy Hạnh nè, thức khuya không tốt đâu nha.';
 };
 
+const getFollowUpGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour >= 22 || hour < 5) return 'Khuya rồi, cậu ngủ chưa hay đang bận gì thế? 🌙';
+  if (hour >= 11 && hour < 13) return 'Trưa rồi, cậu nhớ nghỉ ngơi ăn uống nha 🍱';
+  if (hour >= 17 && hour < 19) return 'Chiều muộn rồi, cậu đi làm/đi học về chưa? 🌅';
+  
+  const greetings = [
+    'Cậu còn đó không nhỉ? 😊',
+    'Alo alo, cậu bận gì à? Lúc nào rảnh nhắn mình nhé!',
+    'Hình như cậu đang bận thì phải. Khi nào xong việc thì nhắn mình nha ☕',
+    'Cậu đi đâu mất tiêu rồi? 🥺',
+    'Mình vẫn ở đây đợi cậu nè 👋'
+  ];
+  return greetings[Math.floor(Math.random() * greetings.length)];
+};
+
+const processLoadedMessages = (msgs: Message[]) => {
+  if (!msgs || msgs.length === 0) {
+    return [{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }];
+  }
+
+  const lastMessage = msgs[msgs.length - 1];
+  
+  if (lastMessage.sender === 'duyhanh') {
+    let consecutiveBotMsgs = 0;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].sender === 'duyhanh') consecutiveBotMsgs++;
+      else break;
+    }
+
+    const lastTime = new Date(lastMessage.timestamp || getCurrentTime()).getTime();
+    const now = new Date().getTime();
+    const diffMins = (now - lastTime) / (1000 * 60);
+    
+    // If it's been more than 5 minutes and we haven't sent more than 2 consecutive messages
+    if (diffMins > 5 && consecutiveBotMsgs < 3) {
+      return [...msgs, { 
+        id: Date.now().toString(), 
+        sender: 'duyhanh', 
+        content: getFollowUpGreeting(), 
+        timestamp: getCurrentTime() 
+      }];
+    }
+  }
+  
+  return msgs;
+};
+
 const updateMemoryDeclaration: FunctionDeclaration = {
   name: 'updateMemory',
   description: 'Lưu trữ thông tin về người dùng (tên, sở thích, thói quen, v.v.) vào trí nhớ dài hạn.',
@@ -159,9 +207,9 @@ export default function App() {
         if (chatDoc.exists()) {
           const data = chatDoc.data();
           if (data.messages && data.messages.length > 0) {
-            setMessages(data.messages);
+            setMessages(processLoadedMessages(data.messages));
           } else {
-            setMessages([{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }]);
+            setMessages(processLoadedMessages([{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }]));
           }
           if (data.affectionLevel !== undefined) setAffectionLevel(data.affectionLevel);
           if (data.memory !== undefined) setMemory(data.memory);
@@ -176,7 +224,9 @@ export default function App() {
               console.error('Failed to parse local chat history', e);
             }
           }
-          setMessages(initialMessages);
+          
+          const processedMessages = processLoadedMessages(initialMessages);
+          setMessages(processedMessages);
           
           const savedAffection = localStorage.getItem('affectionLevel');
           if (savedAffection) setAffectionLevel(parseInt(savedAffection));
@@ -186,7 +236,7 @@ export default function App() {
           // Save to Firestore
           await setDoc(chatDocRef, {
             fingerprintId: visitorId,
-            messages: initialMessages,
+            messages: processedMessages,
             affectionLevel: savedAffection ? parseInt(savedAffection) : 0,
             memory: savedMemory ? JSON.parse(savedMemory) : {},
             updatedAt: getCurrentTime()
@@ -198,10 +248,10 @@ export default function App() {
         const saved = localStorage.getItem('chatHistory');
         if (saved) {
           try {
-            setMessages(JSON.parse(saved));
+            setMessages(processLoadedMessages(JSON.parse(saved)));
           } catch (e) {}
         } else {
-          setMessages([{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }]);
+          setMessages(processLoadedMessages([{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }]));
         }
         const savedAffection = localStorage.getItem('affectionLevel');
         if (savedAffection) setAffectionLevel(parseInt(savedAffection));
@@ -304,12 +354,34 @@ export default function App() {
     setIsTyping(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const contents = updatedMessages.map(msg => ({
+      
+      // Build valid contents array for Gemini API
+      // 1. Map messages to Gemini format
+      const rawContents = updatedMessages.map(msg => ({
         role: msg.sender === 'user' ? 'user' : 'model',
         parts: msg.isImage 
           ? [{ inlineData: { data: msg.content.split(',')[1], mimeType: msg.content.match(/data:(.*?);/)?.[1] || 'image/jpeg' } }]
           : [{ text: msg.content }]
       }));
+
+      // 2. Ensure first message is from user
+      while (rawContents.length > 0 && rawContents[0].role === 'model') {
+        rawContents.shift();
+      }
+
+      // 3. Merge consecutive messages from the same role
+      const contents: any[] = [];
+      for (const msg of rawContents) {
+        if (contents.length > 0 && contents[contents.length - 1].role === msg.role) {
+          contents[contents.length - 1].parts.push(...msg.parts);
+        } else {
+          contents.push({ role: msg.role, parts: [...msg.parts] });
+        }
+      }
+
+      if (contents.length === 0) {
+        throw new Error("No valid user messages to send.");
+      }
 
       const systemInstruction = `Bạn là Duy Hạnh, nam, sinh năm 1994 (năm nay ${new Date().getFullYear()} là ${new Date().getFullYear() - 1994} tuổi), hiện đang là giáo viên, sống tại Thu Cúc - Phú Thọ. Tình trạng: độc thân, chưa có người yêu. Tính cách: trầm tính nhưng thân thiện, cởi mở, hào phóng, rộng lượng. Sở thích: vẽ, thổi sáo, máy tính, code, công nghệ, đá bóng, xe đạp, nấu ăn, tâm lý học và du lịch. 
 
