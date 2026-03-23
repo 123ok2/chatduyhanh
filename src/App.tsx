@@ -324,14 +324,10 @@ export default function App() {
   };
 
   const handleResetChat = async () => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện để bắt đầu lại không?')) {
+    if (window.confirm('Bạn có chắc chắn muốn xóa lịch sử trò chuyện không? (Độ thân mật và trí nhớ vẫn được giữ nguyên)')) {
       const newMessages: Message[] = [{ id: Date.now().toString(), sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }];
       setMessages(newMessages);
-      setAffectionLevel(0);
-      setMemory({});
       localStorage.removeItem('chatHistory');
-      localStorage.removeItem('affectionLevel');
-      localStorage.removeItem('memory');
       
       if (fingerprintId) {
         try {
@@ -339,8 +335,8 @@ export default function App() {
           await setDoc(chatDocRef, {
             fingerprintId,
             messages: newMessages,
-            affectionLevel: 0,
-            memory: {},
+            affectionLevel,
+            memory,
             updatedAt: getCurrentTime()
           });
         } catch (error) {
