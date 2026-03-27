@@ -10,6 +10,8 @@ service cloud.firestore {
     // Fields:
     //   - fingerprintId: string (required, must match document ID)
     //   - messages: list of objects (required)
+    //   - affectionLevel: number (required)
+    //   - memory: map (required)
     //   - updatedAt: string (required)
     //
     // ===============================================================
@@ -19,6 +21,11 @@ service cloud.firestore {
     // ===============================================================
     function hasRequiredFields(fields) {
       return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isRecent(timestampStr) {
+      // Basic check for string format, actual logical check is hard with strings
+      return timestampStr is string;
     }
 
     function isValidMessage(msg) {
@@ -36,9 +43,13 @@ service cloud.firestore {
     }
 
     function isValidChatSession(fingerprintId) {
-      return hasRequiredFields(['fingerprintId', 'messages', 'updatedAt']) &&
+      return hasRequiredFields(['fingerprintId', 'messages', 'affectionLevel', 'memory', 'updatedAt']) &&
              request.resource.data.fingerprintId == fingerprintId &&
-             request.resource.data.updatedAt is string &&
+             request.resource.data.affectionLevel is number &&
+             request.resource.data.affectionLevel >= 0 &&
+             request.resource.data.affectionLevel <= 100 &&
+             request.resource.data.memory is map &&
+             isRecent(request.resource.data.updatedAt) &&
              areValidMessages(request.resource.data.messages);
     }
 

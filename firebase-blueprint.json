@@ -23,9 +23,11 @@
           "type": "array",
           "items": { "$ref": "#/entities/Message" }
         },
+        "affectionLevel": { "type": "number", "minimum": 0, "maximum": 100 },
+        "memory": { "type": "object" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["fingerprintId", "messages", "updatedAt"]
+      "required": ["fingerprintId", "messages", "affectionLevel", "memory", "updatedAt"]
     }
   },
   "firestore": {

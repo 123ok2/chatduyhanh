@@ -4,12 +4,125 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ImageIcon, Phone, Video, Info, SendHorizontal, SmilePlus, RotateCcw, Heart } from 'lucide-react';
-import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
+import { ImageIcon, Phone, Video, Info, SendHorizontal, SmilePlus, RotateCcw, Heart, AlertCircle } from 'lucide-react';
+import { GoogleGenAI, FunctionDeclaration, Type, GenerateContentResponse } from '@google/genai';
 import EmojiPicker from 'emoji-picker-react';
 import fpPromise from '@fingerprintjs/fingerprintjs';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  getDocFromServer,
+  collection,
+  onSnapshot
+} from 'firebase/firestore';
+import { db, auth } from './firebase';
+import Markdown from 'react-markdown';
+
+// --- Error Handling for Firestore ---
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+// --- Error Boundary Component ---
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  errorInfo: string | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, errorInfo: error.message };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      let displayMessage = "Đã có lỗi xảy ra. Vui lòng tải lại trang.";
+      try {
+        if (this.state.errorInfo) {
+          const parsed = JSON.parse(this.state.errorInfo);
+          if (parsed.error) displayMessage = `Lỗi hệ thống: ${parsed.error}`;
+        }
+      } catch (e) {}
+
+      return (
+        <div className="flex flex-col items-center justify-center h-screen bg-gray-50 p-6 text-center">
+          <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Rất tiếc!</h1>
+          <p className="text-gray-600 mb-6">{displayMessage}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-6 py-2 bg-pink-500 text-white rounded-full font-medium active:scale-95 transition-transform"
+          >
+            Tải lại trang
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 interface Message {
   id: string;
@@ -86,9 +199,9 @@ const getFollowUpGreeting = () => {
   return greetings[Math.floor(Math.random() * greetings.length)];
 };
 
-const processLoadedMessages = (msgs: Message[]) => {
+const processLoadedMessages = (msgs: Message[]): Message[] => {
   if (!msgs || msgs.length === 0) {
-    return [{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }];
+    return [{ id: '1', sender: 'duyhanh' as const, content: getGreeting(), timestamp: getCurrentTime() }];
   }
 
   const lastMessage = msgs[msgs.length - 1];
@@ -108,7 +221,7 @@ const processLoadedMessages = (msgs: Message[]) => {
     if (diffMins > 5 && consecutiveBotMsgs < 3) {
       return [...msgs, { 
         id: Date.now().toString(), 
-        sender: 'duyhanh', 
+        sender: 'duyhanh' as const, 
         content: getFollowUpGreeting(), 
         timestamp: getCurrentTime() 
       }];
@@ -200,23 +313,37 @@ export default function App() {
         const visitorId = result.visitorId;
         setFingerprintId(visitorId);
 
+        // Test connection
+        try {
+          await getDocFromServer(doc(db, 'test', 'connection'));
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('the client is offline')) {
+            console.error("Please check your Firebase configuration.");
+          }
+        }
+
         // Try to load from Firestore first
         const chatDocRef = doc(db, 'chats', visitorId);
-        const chatDoc = await getDoc(chatDocRef);
+        let chatDoc;
+        try {
+          chatDoc = await getDoc(chatDocRef);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.GET, `chats/${visitorId}`);
+        }
 
-        if (chatDoc.exists()) {
+        if (chatDoc && chatDoc.exists()) {
           const data = chatDoc.data();
           if (data.messages && data.messages.length > 0) {
             setMessages(processLoadedMessages(data.messages));
           } else {
-            setMessages(processLoadedMessages([{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }]));
+            setMessages(processLoadedMessages([{ id: '1', sender: 'duyhanh' as const, content: getGreeting(), timestamp: getCurrentTime() }]));
           }
           if (data.affectionLevel !== undefined) setAffectionLevel(data.affectionLevel);
           if (data.memory !== undefined) setMemory(data.memory);
         } else {
           // Fallback to localStorage if Firestore is empty (migration)
           const saved = localStorage.getItem('chatHistory');
-          let initialMessages: Message[] = [{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }];
+          let initialMessages: Message[] = [{ id: '1', sender: 'duyhanh' as const, content: getGreeting(), timestamp: getCurrentTime() }];
           if (saved) {
             try {
               initialMessages = JSON.parse(saved);
@@ -234,13 +361,17 @@ export default function App() {
           if (savedMemory) setMemory(JSON.parse(savedMemory));
 
           // Save to Firestore
-          await setDoc(chatDocRef, {
-            fingerprintId: visitorId,
-            messages: processedMessages,
-            affectionLevel: savedAffection ? parseInt(savedAffection) : 0,
-            memory: savedMemory ? JSON.parse(savedMemory) : {},
-            updatedAt: getCurrentTime()
-          });
+          try {
+            await setDoc(chatDocRef, {
+              fingerprintId: visitorId,
+              messages: processedMessages,
+              affectionLevel: savedAffection ? parseInt(savedAffection) : 0,
+              memory: savedMemory ? JSON.parse(savedMemory) : {},
+              updatedAt: getCurrentTime()
+            });
+          } catch (error) {
+            handleFirestoreError(error, OperationType.WRITE, `chats/${visitorId}`);
+          }
         }
       } catch (error) {
         console.error('Error initializing fingerprint or loading data:', error);
@@ -251,7 +382,7 @@ export default function App() {
             setMessages(processLoadedMessages(JSON.parse(saved)));
           } catch (e) {}
         } else {
-          setMessages(processLoadedMessages([{ id: '1', sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }]));
+          setMessages(processLoadedMessages([{ id: '1', sender: 'duyhanh' as const, content: getGreeting(), timestamp: getCurrentTime() }]));
         }
         const savedAffection = localStorage.getItem('affectionLevel');
         if (savedAffection) setAffectionLevel(parseInt(savedAffection));
@@ -294,7 +425,7 @@ export default function App() {
             updatedAt: getCurrentTime()
           });
         } catch (error) {
-          console.error('Error saving to Firestore:', error);
+          handleFirestoreError(error, OperationType.WRITE, `chats/${fingerprintId}`);
         }
       };
       saveToFirestore();
@@ -325,7 +456,7 @@ export default function App() {
 
   const handleResetChat = async () => {
     if (window.confirm('Bạn có chắc chắn muốn xóa lịch sử trò chuyện không? (Độ thân mật và trí nhớ vẫn được giữ nguyên)')) {
-      const newMessages: Message[] = [{ id: Date.now().toString(), sender: 'duyhanh', content: getGreeting(), timestamp: getCurrentTime() }];
+      const newMessages: Message[] = [{ id: Date.now().toString(), sender: 'duyhanh' as const, content: getGreeting(), timestamp: getCurrentTime() }];
       setMessages(newMessages);
       localStorage.removeItem('chatHistory');
       
@@ -340,7 +471,7 @@ export default function App() {
             updatedAt: getCurrentTime()
           });
         } catch (error) {
-          console.error('Error resetting chat in Firestore:', error);
+          handleFirestoreError(error, OperationType.WRITE, `chats/${fingerprintId}`);
         }
       }
     }
@@ -570,7 +701,8 @@ YÊU CẦU TỐI THƯỢNG:
   const displayAvatar = "/avatar.jpg";
 
   return (
-    <div className="flex flex-col w-full h-full overflow-hidden font-sans bg-white relative">
+    <ErrorBoundary>
+      <div className="flex flex-col w-full h-full overflow-hidden font-sans bg-white relative">
       {/* Floating Emojis */}
       {floatingEmojis.map(emoji => (
         <div
@@ -615,7 +747,7 @@ YÊU CẦU TỐI THƯỢNG:
           </div>
         </div>
         <div className="flex items-center gap-4 text-[#0084ff]">
-          <Info className="w-6 h-6 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setShowInfoModal(true)} title="Thông tin & Tiến trình" />
+          <Info className="w-6 h-6 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setShowInfoModal(true)} />
         </div>
       </div>
 
@@ -642,6 +774,10 @@ YÊU CẦU TỐI THƯỢNG:
                 <div className={`${msg.sender === 'user' ? 'bubble-user' : 'bubble-duyhanh'} px-3.5 py-2 break-words text-[0.95rem] leading-relaxed`}>
                   {msg.isImage ? (
                     <img src={msg.content} alt="Hình ảnh" className="max-w-[200px] rounded-2xl block" />
+                  ) : msg.sender === 'duyhanh' ? (
+                    <div className="markdown-body">
+                      <Markdown>{msg.content}</Markdown>
+                    </div>
                   ) : (
                     msg.content
                   )}
@@ -781,5 +917,6 @@ YÊU CẦU TỐI THƯỢNG:
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }
