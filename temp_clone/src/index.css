@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Nunito", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: white;
+  overflow: hidden;
+  width: 100%;
+}
+
+#root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  height: calc(var(--vh, 1vh) * 100);
+  transform: translateY(var(--offset-y, 0px));
+  display: flex;
+  flex-direction: column;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+.chat-header {
+  background: white;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.messages-area::-webkit-scrollbar { width: 6px; }
+.messages-area::-webkit-scrollbar-track { background: transparent; }
+.messages-area::-webkit-scrollbar-thumb { background: #bcc0c4; border-radius: 99px; }
+
+.bubble-user {
+  background: #0084ff;
+  color: white;
+  border-radius: 18px 18px 4px 18px;
+}
+
+.bubble-duyhanh {
+  background: #e4e6eb;
+  color: #050505;
+  border-radius: 18px 18px 18px 4px;
+}
+
+.typing-dot {
+  animation: typingBounce 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+.fade-in {
+  animation: fadeInUp 0.2s ease forwards;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes floatHeart {
+  0% { transform: translateY(0) scale(0.5) rotate(0deg); opacity: 0; }
+  20% { transform: translateY(-20px) scale(1.2) rotate(-10deg); opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(-250px) scale(1) rotate(20deg); opacity: 0; }
+}
+
+.floating-emoji {
+  position: absolute;
+  pointer-events: none;
+  animation: floatHeart ease-out forwards;
+  z-index: 100;
+  font-size: 2rem;
+  bottom: 80px;
+}
+
+.markdown-body p { margin-bottom: 0.5rem; }
+.markdown-body p:last-child { margin-bottom: 0; }
+.markdown-body ul, .markdown-body ol { margin-left: 1.25rem; margin-bottom: 0.5rem; }
+.markdown-body li { margin-bottom: 0.25rem; }
+.markdown-body strong { font-weight: 600; }
+.markdown-body em { font-style: italic; }
+.markdown-body code { background: rgba(0,0,0,0.05); padding: 0.1rem 0.3rem; border-radius: 4px; font-family: monospace; }
